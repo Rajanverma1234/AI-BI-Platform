@@ -1,0 +1,90 @@
+# Development stack: PostgreSQL + FastAPI backend + Vite frontend.
+# Copy .env.example to .env first; every value below has a safe local default.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: aibi-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aibi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aibi}
+      POSTGRES_DB: ${POSTGRES_DB:-aibi}
+    ports:
+      # Host port is configurable so it does not clash with a local PostgreSQL.
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aibi} -d ${POSTGRES_DB:-aibi}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - aibi
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: aibi-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_JSON: ${LOG_JSON:-false}
+      POSTGRES_USER: ${POSTGRES_USER:-aibi}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aibi}
+      POSTGRES_DB: ${POSTGRES_DB:-aibi}
+      # Service name on the compose network, not localhost.
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      AI_PROVIDER: ${AI_PROVIDER:-null}
+      AI_MODEL: ${AI_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "8000:8000"
+    volumes:
+      # Live reload; the venv/caches stay inside the image.
+      - ./backend:/app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    networks:
+      - aibi
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: aibi-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Resolved by the browser, so it must be the host-visible URL.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_API_VERSION_PREFIX: ${VITE_API_VERSION_PREFIX:-/api/v1}
+      VITE_APP_NAME: ${VITE_APP_NAME:-AI BI Platform}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume keeps the image's node_modules from being shadowed.
+      - /app/node_modules
+    networks:
+      - aibi
+
+volumes:
+  postgres_data:
+
+networks:
+  aibi:
+    driver: bridge

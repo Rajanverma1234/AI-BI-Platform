@@ -8,6 +8,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+*.egg-info/
 
 # Node
 node_modules/
@@ -16,6 +17,7 @@ build/
 
 # IDE
 .vscode/
+.idea/
 
 # Logs
 *.log
@@ -23,7 +25,11 @@ build/
 # Testing / cache
 .pytest_cache/
 .coverage
+htmlcov/
 .mypy_cache/
+.ruff_cache/
+coverage/
+*.tsbuildinfo
 
 # Local databases
 *.db

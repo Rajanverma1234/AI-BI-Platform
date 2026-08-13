@@ -1,0 +1,19 @@
+"""Shared FastAPI dependencies."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.ai.base import AIProvider
+from app.ai.registry import get_provider
+from app.core.config import Settings, get_settings
+from app.db.session import get_db
+
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+AppSettings = Annotated[Settings, Depends(get_settings)]
+Provider = Annotated[AIProvider, Depends(get_provider)]
+
+__all__ = ["AppSettings", "DbSession", "Provider"]
