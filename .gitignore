@@ -31,6 +31,10 @@ htmlcov/
 coverage/
 *.tsbuildinfo
 
+# Uploaded dataset files (local storage provider)
+var/
+backend/var/
+
 # Local databases
 *.db
 *.sqlite

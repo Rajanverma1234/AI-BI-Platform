@@ -6,6 +6,7 @@
  */
 
 import { apiUrl } from '@/config/env';
+import { getAuthToken } from '@/lib/authToken';
 import type { ApiErrorBody } from '@/types/api';
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
@@ -40,6 +41,8 @@ export interface RequestOptions extends Omit<RequestInit, 'body'> {
   timeoutMs?: number;
   /** Caller-supplied signal; composed with the internal timeout signal. */
   signal?: AbortSignal;
+  /** Set false for endpoints that must not carry the bearer token. */
+  withAuth?: boolean;
 }
 
 function isApiErrorBody(value: unknown): value is ApiErrorBody {
@@ -66,7 +69,16 @@ async function parseBody(response: Response): Promise<unknown> {
 
 /** Perform a versioned API request and return the parsed JSON payload. */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, timeoutMs = DEFAULT_TIMEOUT_MS, headers, signal, ...rest } = options;
+  const {
+    body,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    headers,
+    signal,
+    withAuth = true,
+    ...rest
+  } = options;
+
+  const token = withAuth ? getAuthToken() : null;
 
   const timeoutController = new AbortController();
   const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
@@ -80,6 +92,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       headers: {
         Accept: 'application/json',
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...headers,
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -115,6 +128,107 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   return payload as T;
+}
+
+export interface UploadOptions {
+  /** Called with 0-100 as the request body is transmitted. */
+  onProgress?: (percent: number) => void;
+  signal?: AbortSignal;
+  method?: 'POST' | 'PUT';
+}
+
+/**
+ * Multipart upload with progress reporting.
+ *
+ * Uses XMLHttpRequest because `fetch` cannot report upload progress. Error
+ * normalisation matches `request()`, so callers still receive an `ApiError`.
+ * The browser sets the multipart Content-Type (including the boundary), so it
+ * must not be set here.
+ */
+export function uploadFile<T>(
+  path: string,
+  body: FormData,
+  { onProgress, signal, method = 'POST' }: UploadOptions = {},
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, apiUrl(path));
+    xhr.responseType = 'text';
+
+    const token = getAuthToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('Accept', 'application/json');
+
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+    }
+
+    const onAbort = () => xhr.abort();
+    signal?.addEventListener('abort', onAbort);
+
+    const cleanup = () => signal?.removeEventListener('abort', onAbort);
+
+    xhr.onload = () => {
+      cleanup();
+      let payload: unknown = null;
+      try {
+        payload = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        payload = null;
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(payload as T);
+        return;
+      }
+
+      if (isApiErrorBody(payload)) {
+        reject(
+          new ApiError(payload.error.message, {
+            status: xhr.status,
+            code: payload.error.code,
+            details: payload.error.details,
+            requestId: payload.request_id ?? null,
+          }),
+        );
+        return;
+      }
+      reject(
+        new ApiError(`Upload failed with status ${xhr.status}.`, {
+          status: xhr.status,
+          code: 'http_error',
+        }),
+      );
+    };
+
+    xhr.onerror = () => {
+      cleanup();
+      reject(new ApiError('Could not reach the API. Is the backend running?'));
+    };
+
+    xhr.onabort = () => {
+      cleanup();
+      reject(new ApiError('Upload cancelled.', { code: 'cancelled' }));
+    };
+
+    xhr.send(body);
+  });
+}
+
+/** Append defined query parameters to a path, skipping undefined values. */
+export function withQuery(path: string, params: object = {}): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      search.append(key, String(value));
+    }
+  }
+  const query = search.toString();
+  return query ? `${path}?${query}` : path;
 }
 
 export const apiClient = {

@@ -98,7 +98,79 @@ users ──1:N──► workspaces ──1:N──► projects
 
 All three carry UUID primary keys and timezone-aware `created_at` / `updated_at`.
 
-## 4. AI provider abstraction
+## 4. Authentication and authorization
+
+### Flow
+
+```
+register ──► Argon2id hash stored ──► login ──► signed JWT ──► Authorization: Bearer <token>
+                                                                      │
+                                            get_current_user dependency resolves the user
+```
+
+`POST /auth/register` creates the account; `POST /auth/login` returns an access
+token; every protected route resolves the caller through one dependency.
+
+### Where the pieces live
+
+| Concern | Module |
+| --- | --- |
+| Password hashing, token sign/verify | `app/core/security.py` |
+| Register / authenticate / issue token | `app/services/auth_service.py` |
+| `CurrentUser` dependency | `app/api/deps.py` |
+| Routes | `app/api/v1/endpoints/auth.py` |
+| Request/response contracts | `app/schemas/auth.py`, `app/schemas/user.py` |
+
+`app/core/security.py` imports neither FastAPI nor SQLAlchemy, so the crypto is
+testable on its own.
+
+### Passwords
+
+Argon2id via `argon2-cffi`, cost parameters configurable
+(`PASSWORD_HASH_TIME_COST`, `_MEMORY_COST`, `_PARALLELISM`). Login rehashes
+transparently when those parameters change. `verify_password` always runs one
+hash comparison — even for an unknown email — so response timing does not
+reveal whether an account exists.
+
+### Tokens
+
+HS256 JWT carrying `sub` (user id), `iat`, `exp` and `type: "access"`. The
+`type` claim means a future refresh token cannot be replayed as an access
+token. `JWT_SECRET_KEY` comes from the environment; **production refuses to
+start without it**, and other environments fall back to a value explicitly
+named `insecure-development-only-…`. Any missing, malformed, expired,
+wrongly-signed or wrong-type token yields a 401 in the standard error envelope.
+
+### What is deliberately not leaked
+
+- Login returns one message — `Incorrect email or password.` — for unknown
+  email, wrong password and disabled account alike.
+- `password_hash` appears in no schema, so it cannot escape through a response.
+- Cross-tenant reads return **404, not 403**. A 403 would confirm that an id
+  exists, letting an attacker enumerate other tenants' resources. The trade-off
+  is that a user who genuinely lost access sees "not found"; the check lives in
+  `workspace_service.get_workspace_for_user`, so it is a one-line change if a
+  future membership model needs a real 403.
+
+### Authorization model
+
+Membership is ownership: a workspace has exactly one `owner_id`, and a project
+belongs to exactly one workspace.
+
+```
+GET /workspaces/{ws}/projects/{p}
+  │
+  ├─ get_current_user            → 401 if the token is bad
+  ├─ get_workspace_for_user      → 404 unless the caller owns {ws}
+  └─ project scoped to {ws}.id   → 404 if {p} lives in another workspace
+```
+
+Every project query is filtered by the already-authorised workspace id, so a
+valid project id addressed through the wrong workspace cannot resolve. When
+richer roles arrive (a `workspace_members` table), only
+`get_workspace_for_user` changes — callers keep working.
+
+## 5. AI provider abstraction
 
 `app/ai/base.py` declares `AIProvider` (`is_configured`, `complete`, `stream`)
 plus Pydantic request/response types. `app/ai/registry.py` maps a name to a
@@ -111,15 +183,16 @@ Adding a provider means one new module and one `register_provider` line. No
 application code imports a provider directly, and no credential is ever stored
 in the repository.
 
-## 5. Frontend structure
+## 6. Frontend structure
 
 | Directory | Responsibility |
 | --- | --- |
 | `src/routes/` | Route table consumed by `createBrowserRouter` |
 | `src/pages/` | Route-level screens |
+| `src/auth/` | `AuthProvider`, `useAuth`, `ProtectedRoute` / `GuestOnlyRoute` |
 | `src/features/` | Feature-scoped components (e.g. `health/BackendStatus`) |
-| `src/components/` | Reusable UI (`ui/`) and the layout shell (`layout/`) |
-| `src/lib/` | `apiClient` — the only module that calls `fetch` |
+| `src/components/` | Reusable UI (`ui/`) and the layout shells (`layout/`) |
+| `src/lib/` | `apiClient` — the only module that calls `fetch`; `authToken` storage |
 | `src/api/` | Typed endpoint wrappers built on `apiClient` |
 | `src/hooks/` | `useAsync` — the loading/error/data state foundation |
 | `src/config/` | Typed `import.meta.env` access |
@@ -130,7 +203,26 @@ normalisation, and turns every failure into an `ApiError`. `useAsync` gives each
 screen `status`/`data`/`error`/`reload` with automatic request cancellation.
 `ErrorBoundary` wraps the router so a render crash degrades to a message.
 
-## 6. Testing strategy
+### Auth state
+
+`AuthProvider` (React context — no extra state library) holds
+`status | user | login | register | logout`. On load, a stored token is treated
+as unproven until `/auth/me` confirms it; a rejected token is discarded. The
+route table splits into a `GuestOnlyRoute` branch (login, register) and a
+`ProtectedRoute` branch (everything else), and both render a spinner while
+`status === 'loading'` so a valid session is never bounced to the login screen.
+
+`apiClient` attaches `Authorization: Bearer <token>` automatically; `withAuth:
+false` opts out for login and register.
+
+**Token storage.** The token lives in a module variable mirrored into
+`localStorage`, so a reload keeps the session. localStorage is reachable by any
+script on the origin, so this accepts some XSS exposure in exchange for a
+stateless backend; the stronger option (an httpOnly refresh cookie) needs
+session endpoints that do not exist yet. Every read and write goes through
+`src/lib/authToken.ts`, so that change touches one file.
+
+## 7. Testing strategy
 
 Tests are part of the definition of done, not a follow-up task.
 
@@ -139,16 +231,24 @@ Tests are part of the definition of done, not a follow-up task.
   `tests/test_migrations.py` applies the Alembic chain to a throwaway database
   and asserts the resulting schema matches `Base.metadata`, so migrations cannot
   silently drift from the models.
-- **Frontend** — Vitest + Testing Library in jsdom, with `fetch` stubbed. Tests
-  cover the API client, the error boundary, routing and the health screen's
-  loading/success/error/retry states.
+  Auth, workspace and project suites cover the happy paths plus the tenancy
+  boundary (cross-user and cross-workspace access).
+- **Frontend** — Vitest + Testing Library in jsdom. `src/test/mockApi.ts`
+  provides a route-aware `fetch` stub keyed by `"METHOD /path"`, and
+  `renderWithProviders` mounts the real route table inside `AuthProvider`. Tests
+  cover the API client, error boundary, routing, login/register forms, auth
+  state, protected routes, logout, and workspace/project loading and creation.
+- **Live integration (opt-in)** — `src/api/*.integration.test.ts` drive the real
+  API modules against a running backend; skipped unless `RUN_API_INTEGRATION=1`.
 - **Static analysis** — `mypy --strict` over `app/`, `ruff` for lint/imports,
   `tsc -b` for the frontend.
 
-## 7. Conventions for future work
+## 8. Conventions for future work
 
 1. New endpoints: schema → service → route, registered on the v1 router.
 2. Model changes always ship with an Alembic revision; `alembic check` must be clean.
 3. Raise `AppError` subclasses rather than returning ad-hoc error payloads.
 4. Frontend network access goes through `src/api/*` on top of `apiClient`.
-5. Every change adds or updates tests, and the existing suites must stay green.
+5. Protected routes take `CurrentUser`; tenant-scoped reads go through
+   `get_workspace_for_user` rather than querying by id directly.
+6. Every change adds or updates tests, and the existing suites must stay green.

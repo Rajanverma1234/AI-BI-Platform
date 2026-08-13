@@ -12,9 +12,13 @@ from sqlalchemy.orm import selectinload
 
 from app.models import Project, User, Workspace
 
+# password_hash is NOT NULL as of migration 0002; a literal stands in here
+# because these tests are about schema constraints, not authentication.
+STORED_HASH = "$argon2id$fake-hash-for-model-tests"
+
 
 async def _seed_workspace(session: AsyncSession) -> Workspace:
-    user = User(email="owner@example.test", full_name="Owner")
+    user = User(email="owner@example.test", display_name="Owner", password_hash=STORED_HASH)
     workspace = Workspace(name="Analytics", slug="analytics", owner=user)
     session.add(workspace)
     await session.commit()
@@ -22,7 +26,7 @@ async def _seed_workspace(session: AsyncSession) -> Workspace:
 
 
 async def test_user_gets_uuid_and_timestamps(db_session: AsyncSession) -> None:
-    user = User(email="a@example.test")
+    user = User(email="a@example.test", password_hash=STORED_HASH)
     db_session.add(user)
     await db_session.commit()
 
@@ -34,10 +38,10 @@ async def test_user_gets_uuid_and_timestamps(db_session: AsyncSession) -> None:
 
 
 async def test_user_email_is_unique(db_session: AsyncSession) -> None:
-    db_session.add(User(email="dup@example.test"))
+    db_session.add(User(email="dup@example.test", password_hash=STORED_HASH))
     await db_session.commit()
 
-    db_session.add(User(email="dup@example.test"))
+    db_session.add(User(email="dup@example.test", password_hash=STORED_HASH))
     with pytest.raises(IntegrityError):
         await db_session.commit()
     await db_session.rollback()

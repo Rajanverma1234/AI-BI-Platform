@@ -67,6 +67,38 @@ class ServiceUnavailableError(AppError):
     message = "A required dependency is unavailable."
 
 
+class UnsupportedFileTypeError(AppError):
+    status_code = 415
+    code = "unsupported_file_type"
+    message = "This file type is not supported."
+
+
+class FileTooLargeError(AppError):
+    status_code = 413
+    code = "file_too_large"
+    message = "The uploaded file is too large."
+
+
+class StorageError(AppError):
+    """Raised when the storage backend fails.
+
+    The message is deliberately generic: filesystem paths and bucket names
+    must never reach the client.
+    """
+
+    status_code = 503
+    code = "storage_error"
+    message = "The file store is unavailable."
+
+
+class ProcessingError(AppError):
+    """Raised when an uploaded file cannot be parsed."""
+
+    status_code = 422
+    code = "processing_error"
+    message = "The uploaded file could not be processed."
+
+
 class ProviderError(AppError):
     """Raised when an external AI provider fails or is misconfigured."""
 

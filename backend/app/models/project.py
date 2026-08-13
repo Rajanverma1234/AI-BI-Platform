@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.dataset import Dataset
     from app.models.workspace import Workspace
 
 
@@ -29,6 +30,12 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     workspace: Mapped[Workspace] = relationship(back_populates="projects")
+    # Matches the workspace -> project policy: deleting a project removes its
+    # datasets. Stored files are cleaned up by the dataset service.
+    datasets: Mapped[list[Dataset]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<Project id={self.id} slug={self.slug!r}>"

@@ -42,7 +42,12 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:5173/)",
       "Bash(RUN_API_INTEGRATION=1 VITE_API_BASE_URL=http://127.0.0.1:8000 npx vitest run src/api/health.integration.test.ts)",
       "Bash(./.venv/Scripts/python.exe -c \"import app.main, app.models, app.ai, app.schemas, app.services, app.utils; print\\('all packages import cleanly'\\)\")",
-      "Bash(POSTGRES_HOST=localhost POSTGRES_USER=aibi POSTGRES_PASSWORD=change-me-locally POSTGRES_DB=aibi ./.venv/Scripts/python.exe -m alembic check)"
+      "Bash(POSTGRES_HOST=localhost POSTGRES_USER=aibi POSTGRES_PASSWORD=change-me-locally POSTGRES_DB=aibi ./.venv/Scripts/python.exe -m alembic check)",
+      "Bash(./.venv/Scripts/python.exe -m alembic history)",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/api/test_auth.py tests/test_config.py)",
+      "Bash(./.venv/Scripts/python.exe -m pytest tests/api/test_auth.py::test_register_creates_an_account)",
+      "Bash(./.venv/Scripts/python.exe -c ' *)",
+      "Bash(RUN_API_INTEGRATION=1 VITE_API_BASE_URL=http://127.0.0.1:8000 npx vitest run src/api/auth.integration.test.ts src/api/health.integration.test.ts)"
     ]
   }
 }

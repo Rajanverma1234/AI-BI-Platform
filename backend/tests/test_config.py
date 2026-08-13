@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
-from app.core.config import Settings, get_settings
+from app.core.config import DEV_JWT_SECRET_KEY, Settings, get_settings
 
 # conftest exports these so the suite runs without PostgreSQL; clear them here
 # so the tests observe the real defaults rather than the test harness values.
-_HARNESS_VARS = ("ENVIRONMENT", "DATABASE_URL", "CORS_ORIGINS", "LOG_LEVEL")
+_HARNESS_VARS = ("ENVIRONMENT", "DATABASE_URL", "CORS_ORIGINS", "LOG_LEVEL", "JWT_SECRET_KEY")
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +85,28 @@ def test_log_level_is_normalised() -> None:
 
 
 def test_production_hides_docs_flag() -> None:
-    assert Settings(_env_file=None, ENVIRONMENT="production").is_production is True
+    settings = Settings(_env_file=None, ENVIRONMENT="production", JWT_SECRET_KEY="a-real-secret")
+
+    assert settings.is_production is True
+
+
+def test_production_requires_an_explicit_jwt_secret() -> None:
+    with pytest.raises(PydanticValidationError, match="JWT_SECRET_KEY"):
+        Settings(_env_file=None, ENVIRONMENT="production")
+
+
+def test_non_production_falls_back_to_a_marked_dev_secret() -> None:
+    settings = Settings(_env_file=None, ENVIRONMENT="development")
+
+    assert settings.JWT_SECRET_KEY is None
+    assert settings.jwt_secret_key == DEV_JWT_SECRET_KEY
+    assert "development-only" in settings.jwt_secret_key
+
+
+def test_explicit_jwt_secret_is_used_when_provided() -> None:
+    settings = Settings(_env_file=None, JWT_SECRET_KEY="from-the-environment")
+
+    assert settings.jwt_secret_key == "from-the-environment"
 
 
 def test_get_settings_is_cached() -> None:

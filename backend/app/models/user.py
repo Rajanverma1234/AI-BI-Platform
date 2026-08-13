@@ -17,10 +17,9 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
-    full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Authentication is added in a later task; the column exists so the initial
-    # migration does not need to be rewritten.
-    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Argon2id digest. Never exposed through a schema - see app/schemas/user.py.
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False
     )

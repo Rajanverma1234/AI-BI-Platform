@@ -42,6 +42,9 @@ def test_upgrade_head_creates_the_expected_schema(alembic_config: tuple[Config, 
 
         user_columns = {c["name"] for c in inspector.get_columns("users")}
         assert {"id", "email", "is_active", "created_at", "updated_at"} <= user_columns
+        # Renamed by revision 0002; the old names must be gone.
+        assert {"password_hash", "display_name"} <= user_columns
+        assert not {"hashed_password", "full_name"} & user_columns
     finally:
         engine.dispose()
 

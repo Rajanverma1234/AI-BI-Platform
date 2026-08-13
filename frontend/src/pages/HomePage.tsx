@@ -1,25 +1,32 @@
+import { Link } from 'react-router-dom';
+
+import { useAuth } from '@/auth/useAuth';
 import { Card } from '@/components/ui';
 import { BackendStatus } from '@/features/health/BackendStatus';
 
 export default function HomePage() {
+  const { user } = useAuth();
+
   return (
     <div className="stack">
       <div>
         <h1>AI BI Platform</h1>
         <p className="muted">
-          Foundation build. The dashboard arrives in a later task - for now this screen verifies
-          the frontend can talk to the API.
+          Signed in as {user?.display_name || user?.email}. The dashboard arrives in a later task —
+          for now, set up your workspaces and projects.
         </p>
       </div>
 
       <BackendStatus />
 
-      <Card title="What is wired up">
+      <Card title="Get started">
         <ul className="list">
-          <li>Versioned FastAPI backend at /api/v1 with centralised errors and structured logs</li>
-          <li>PostgreSQL via SQLAlchemy with Alembic migrations</li>
-          <li>Users, workspaces and projects as the initial data model</li>
-          <li>Pluggable AI provider layer (no credentials committed)</li>
+          <li>
+            <Link to="/workspaces">Workspaces</Link> — create a workspace and add projects to it
+          </li>
+          <li>
+            <Link to="/system">System</Link> — check the backend dependencies
+          </li>
         </ul>
       </Card>
     </div>

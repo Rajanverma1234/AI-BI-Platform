@@ -1,41 +1,40 @@
-import { render, screen } from '@testing-library/react';
-import { RouterProvider, createMemoryRouter } from 'react-router-dom';
+import { screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { routes } from '@/routes';
-import { mockJsonFetch } from '@/test/mockFetch';
-
-function renderAt(path: string) {
-  return render(<RouterProvider router={createMemoryRouter(routes, { initialEntries: [path] })} />);
-}
+import { clearAuthToken, setAuthToken } from '@/lib/authToken';
+import { authenticatedHandlers, mockApi } from '@/test/mockApi';
+import { renderApp } from '@/test/renderWithProviders';
 
 describe('routing', () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
-    mockJsonFetch({
-      status: 'ok',
-      service: 'AI BI Platform',
-      version: '0.1.0',
-      environment: 'test',
-      dependencies: [],
-    });
+    clearAuthToken();
+    // Routes below the app shell now require a session.
+    setAuthToken('a-valid-access-token');
+    mockApi(authenticatedHandlers());
   });
 
   it('renders the overview page at /', async () => {
-    renderAt('/');
+    renderApp('/');
 
     expect(await screen.findByRole('heading', { name: 'AI BI Platform' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Primary' })).toBeInTheDocument();
   });
 
+  it('renders the workspaces page at /workspaces', async () => {
+    renderApp('/workspaces');
+
+    expect(await screen.findByRole('heading', { name: 'Workspaces' })).toBeInTheDocument();
+  });
+
   it('renders the system page at /system', async () => {
-    renderAt('/system');
+    renderApp('/system');
 
     expect(await screen.findByRole('heading', { name: 'System' })).toBeInTheDocument();
   });
 
   it('renders the not-found page for an unknown route', async () => {
-    renderAt('/nope');
+    renderApp('/nope');
 
     expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeInTheDocument();
   });
