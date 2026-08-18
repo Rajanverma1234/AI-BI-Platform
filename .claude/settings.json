@@ -108,7 +108,12 @@
       "Bash(./.venv/Scripts/python.exe \"C:/Users/rajan/AppData/Local/Temp/claude/c--Users-rajan-Downloads-AI-BI-Platform/ab5a8473-2ffa-4b45-a9e5-f9bf24b5a983/scratchpad/perf.py\")",
       "Bash(curl -sS http://127.0.0.1:8000/api/v1/health)",
       "Bash(RUN_API_INTEGRATION=1 VITE_API_BASE_URL=http://127.0.0.1:8000 npx vitest run src/api/auth.integration.test.ts)",
-      "Bash(RUN_API_INTEGRATION=1 VITE_API_BASE_URL=http://127.0.0.1:8000 npx vitest run src/api/auth.integration.test.ts src/api/health.integration.test.ts)"
+      "Bash(RUN_API_INTEGRATION=1 VITE_API_BASE_URL=http://127.0.0.1:8000 npx vitest run src/api/auth.integration.test.ts src/api/health.integration.test.ts)",
+      "Read(//c/Users/rajan/**)",
+      "Bash(env)",
+      "Bash(curl -s -m 20 http://127.0.0.1:8000/api/v1/health)",
+      "Bash(curl -s -o /dev/null -w \"frontend:%{http_code}\\\\n\" -m 20 http://localhost:5173)",
+      "Bash(curl -s -m 20 http://127.0.0.1:8000/api/v1/health/ready)"
     ],
     "additionalDirectories": [
       "\\tmp",
