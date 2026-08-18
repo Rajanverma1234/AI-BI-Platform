@@ -1,5 +1,9 @@
 # Development stack: PostgreSQL + FastAPI backend + Vite frontend.
 # Copy .env.example to .env first; every value below has a safe local default.
+#
+# This file is for development only: it bind-mounts source, runs uvicorn with
+# --reload, and publishes the database port to the host. For production use
+# docker-compose.prod.yml, which does none of those things.
 
 services:
   db:
@@ -28,6 +32,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+      # The Dockerfile is multi-target; this file always builds the dev one.
+      target: development
     container_name: aibi-backend
     restart: unless-stopped
     depends_on:
@@ -71,6 +77,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: development
     container_name: aibi-frontend
     restart: unless-stopped
     depends_on:

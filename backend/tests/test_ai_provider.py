@@ -25,7 +25,19 @@ async def test_null_provider_is_the_safe_default() -> None:
     provider = build_provider("null")
 
     assert isinstance(provider, NullProvider)
-    assert provider.is_configured() is True
+
+
+async def test_null_provider_reports_itself_as_not_configured() -> None:
+    """Regression: it used to claim it was configured.
+
+    Every AI call site branches on ``is_configured()`` and falls back to
+    deterministic output when it is false. While the stub claimed to be
+    configured those branches were skipped, so callers ran the stub and
+    presented its echo as a real answer - the NLQ endpoint returned
+    "[null-provider] no AI provider configured; received: {...}" to the user,
+    and the analyst reported ai_available=True with an empty narrative.
+    """
+    assert NullProvider().is_configured() is False
 
 
 async def test_null_provider_completes_without_network() -> None:

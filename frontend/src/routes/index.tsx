@@ -7,9 +7,18 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { AuthLayout } from '@/components/layout/AuthLayout';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
+import DashboardDetailPage from '@/pages/DashboardDetailPage';
+import DashboardsPage from '@/pages/DashboardsPage';
+import DatasetAdvancedAnalyticsPage from '@/pages/DatasetAdvancedAnalyticsPage';
+import DatasetAiAnalystPage from '@/pages/DatasetAiAnalystPage';
+import DatasetAnalyticsPage from '@/pages/DatasetAnalyticsPage';
 import DatasetCleaningPage from '@/pages/DatasetCleaningPage';
 import DatasetDetailPage from '@/pages/DatasetDetailPage';
+import DatasetExplorePage from '@/pages/DatasetExplorePage';
+import DatasetInsightsPage from '@/pages/DatasetInsightsPage';
 import DatasetProfilePage from '@/pages/DatasetProfilePage';
+import DatasetQueryPage from '@/pages/DatasetQueryPage';
+import DatasetReportsPage from '@/pages/DatasetReportsPage';
 import DatasetsPage from '@/pages/DatasetsPage';
 import DatasetVersionsPage from '@/pages/DatasetVersionsPage';
 import NotFoundPage from '@/pages/NotFoundPage';
@@ -48,6 +57,14 @@ export const routes: RouteObject[] = [
             path: 'workspaces/:workspaceId/projects/:projectId',
             element: <ProjectDetailPage />,
           },
+          {
+            path: 'workspaces/:workspaceId/projects/:projectId/dashboards',
+            element: <DashboardsPage />,
+          },
+          {
+            path: 'workspaces/:workspaceId/projects/:projectId/dashboards/:dashboardId',
+            element: <DashboardDetailPage />,
+          },
           // Datasets are addressed by project id alone, matching the API.
           { path: 'projects/:projectId/datasets', element: <DatasetsPage /> },
           {
@@ -65,6 +82,34 @@ export const routes: RouteObject[] = [
           {
             path: 'projects/:projectId/datasets/:datasetId/versions',
             element: <DatasetVersionsPage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/explore',
+            element: <DatasetExplorePage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/analytics',
+            element: <DatasetAnalyticsPage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/ai-analyst',
+            element: <DatasetAiAnalystPage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/query',
+            element: <DatasetQueryPage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/advanced',
+            element: <DatasetAdvancedAnalyticsPage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/insights',
+            element: <DatasetInsightsPage />,
+          },
+          {
+            path: 'projects/:projectId/datasets/:datasetId/reports',
+            element: <DatasetReportsPage />,
           },
           { path: 'system', element: <SystemPage /> },
           { path: '*', element: <NotFoundPage /> },

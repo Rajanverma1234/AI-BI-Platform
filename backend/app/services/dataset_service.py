@@ -147,6 +147,19 @@ async def list_datasets(
 # --- Upload pipeline ---------------------------------------------------------
 
 
+async def _persist(session: AsyncSession, dataset: Dataset) -> None:
+    """Flush, then reload the server-maintained columns.
+
+    ``updated_at`` uses an ``onupdate`` default, so an UPDATE leaves it expired.
+    Serialising the dataset afterwards would then trigger a lazy load from the
+    synchronous response layer and fail with ``MissingGreenlet``. Every exit
+    from ``_store_and_process`` goes through here so the failure paths cannot
+    drift from the success path again.
+    """
+    await session.flush()
+    await session.refresh(dataset)
+
+
 async def _store_and_process(
     session: AsyncSession,
     storage: StorageProvider,
@@ -194,7 +207,7 @@ async def _store_and_process(
         dataset.status = DatasetStatus.FAILED
         dataset.error_message = exc.message
         session.add(dataset)
-        await session.flush()
+        await _persist(session, dataset)
         logger.info(
             "Dataset processing failed", extra={"dataset_id": str(dataset.id), "reason": exc.code}
         )
@@ -203,7 +216,7 @@ async def _store_and_process(
         dataset.status = DatasetStatus.FAILED
         dataset.error_message = "The file could not be processed."
         session.add(dataset)
-        await session.flush()
+        await _persist(session, dataset)
         logger.exception(
             "Unexpected dataset processing error", extra={"dataset_id": str(dataset.id)}
         )
@@ -215,8 +228,7 @@ async def _store_and_process(
     dataset.status = DatasetStatus.READY
     dataset.error_message = None
     session.add(dataset)
-    await session.flush()
-    await session.refresh(dataset)
+    await _persist(session, dataset)
     return dataset
 
 

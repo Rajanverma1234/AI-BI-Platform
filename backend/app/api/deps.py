@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,11 +32,15 @@ _bearer_scheme = HTTPBearer(auto_error=False, description="JWT access token")
 BearerToken = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)]
 
 
-async def get_current_user(session: DbSession, credentials: BearerToken) -> User:
+async def get_current_user(
+    request: Request, session: DbSession, credentials: BearerToken
+) -> User:
     """Resolve the authenticated user from the Authorization header.
 
     Raises :class:`UnauthorizedError` when the token is missing, malformed,
-    expired, or no longer maps to an active account.
+    expired, or no longer maps to an active account. Every failure returns the
+    same wording, so a caller cannot tell a bad signature from a disabled
+    account.
     """
     if credentials is None or not credentials.credentials:
         raise UnauthorizedError("Authentication credentials were not provided.")
@@ -48,6 +52,9 @@ async def get_current_user(session: DbSession, credentials: BearerToken) -> User
         # The token was validly signed but the account is gone or disabled.
         raise UnauthorizedError("Access token is invalid.")
 
+    # Lets rate limiting key on identity rather than source address, so one
+    # tenant behind a shared NAT cannot exhaust another's budget.
+    request.state.user_id = str(user.id)
     return user
 
 

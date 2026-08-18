@@ -1,0 +1,148 @@
+# Production stack. Deliberately not an extension of docker-compose.yml: the
+# development file bind-mounts source, enables --reload and publishes the
+# database port, and none of those should be one forgotten `-f` away.
+#
+#   cp .env.production.example .env.production
+#   # fill in every REQUIRED value, then:
+#   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Differences from development:
+#   - production build targets (no reload, no dev server, no dev dependencies)
+#   - no source bind-mounts; the image is the artefact
+#   - the database port is not published to the host
+#   - migrations run as a separate one-shot service, not on every boot
+#   - env values are required rather than defaulted
+#
+# The project name is set explicitly. Compose derives it from the directory
+# otherwise, which would make this stack share `postgres_data` and
+# `dataset_storage` with docker-compose.yml - so a production stack started in
+# a directory where development had run would attach to the development
+# database. It fails on a credentials mismatch if you are lucky, and silently
+# serves development data if you are not.
+name: aibi-prod
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # No `ports`: the database is reachable only on the compose network.
+    # Use `docker compose exec db psql` or an SSH tunnel for maintenance.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - aibi
+
+  # One-shot migration step. Runs to completion before the API starts, so a
+  # failed migration stops the deployment instead of leaving a half-migrated
+  # database serving traffic.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment: &backend_env
+      ENVIRONMENT: production
+      DEBUG: "false"
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # Structured logs by default: a production log line should be parseable.
+      LOG_JSON: ${LOG_JSON:-true}
+      # Each worker keeps its own rate-limit counters, so this also sets how
+      # exact the RATE_LIMIT_* budgets are. Use 1 for exact limits and scale
+      # with replicas, or enforce limits at the ingress.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-20}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      HSTS_ENABLED: ${HSTS_ENABLED:-true}
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_AUTH_PER_MINUTE: ${RATE_LIMIT_AUTH_PER_MINUTE:-10}
+      RATE_LIMIT_AI_PER_MINUTE: ${RATE_LIMIT_AI_PER_MINUTE:-20}
+      RATE_LIMIT_HEAVY_PER_MINUTE: ${RATE_LIMIT_HEAVY_PER_MINUTE:-30}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      STORAGE_LOCAL_ROOT: /app/var/storage
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-50}
+      MAX_REQUEST_BODY_MB: ${MAX_REQUEST_BODY_MB:-64}
+      AI_PROVIDER: ${AI_PROVIDER:-null}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_REQUEST_TIMEOUT: ${AI_REQUEST_TIMEOUT:-60}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - dataset_storage:/app/var/storage
+    command: ["alembic", "upgrade", "head"]
+    networks:
+      - aibi
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment: *backend_env
+    volumes:
+      # Uploaded datasets and generated reports must outlive the container.
+      # Back this volume up alongside the database - see docs/backup-recovery.md.
+      - dataset_storage:/app/var/storage
+    # Bound to localhost: a TLS-terminating reverse proxy on the host forwards
+    # to it. Change to "8000:8000" only if something else terminates TLS.
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - aibi
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+      args:
+        # Inlined at build time by Vite, so this is a build argument. Changing
+        # it requires a rebuild, not a restart.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL is required}
+        VITE_API_VERSION_PREFIX: ${VITE_API_VERSION_PREFIX:-/api/v1}
+        VITE_APP_NAME: ${VITE_APP_NAME:-AI BI Platform}
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8080:80"
+    networks:
+      - aibi
+
+# Namespaced by the project name above, so these are `aibi-prod_postgres_data`
+# and `aibi-prod_dataset_storage` - never the development volumes.
+volumes:
+  postgres_data:
+  dataset_storage:
+
+networks:
+  aibi:
+    driver: bridge

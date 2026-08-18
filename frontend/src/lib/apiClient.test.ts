@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { env } from '@/config/env';
-import { ApiError, apiClient } from '@/lib/apiClient';
+import { ApiError, apiClient, setUnauthorizedHandler } from '@/lib/apiClient';
+import { clearAuthToken, setAuthToken } from '@/lib/authToken';
 import { mockJsonFetch, mockNetworkFailure } from '@/test/mockFetch';
 
 describe('apiClient', () => {
@@ -72,5 +73,56 @@ describe('apiClient', () => {
     const [, init] = vi.mocked(fetchMock).mock.calls[0] as unknown as [string, RequestInit];
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ name: 'x' }));
+  });
+
+  describe('session expiry', () => {
+    beforeEach(() => {
+      clearAuthToken();
+      setUnauthorizedHandler(null);
+    });
+
+    it('reports a 401 when the request carried a token', async () => {
+      setAuthToken('an-expired-token');
+      const onUnauthorized = vi.fn();
+      setUnauthorizedHandler(onUnauthorized);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(null, { status: 401 })),
+      );
+
+      await apiClient.get('/workspaces').catch(() => undefined);
+
+      // A token that is no longer accepted must end the session rather than
+      // leave the user on a page whose every request now fails.
+      expect(onUnauthorized).toHaveBeenCalledOnce();
+    });
+
+    it('stays quiet when no token was sent', async () => {
+      const onUnauthorized = vi.fn();
+      setUnauthorizedHandler(onUnauthorized);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(null, { status: 401 })),
+      );
+
+      // A failed sign-in is an ordinary 401, not an expired session.
+      await apiClient.post('/auth/login', { email: 'a@b.c' }).catch(() => undefined);
+
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    });
+
+    it('ignores other failure statuses', async () => {
+      setAuthToken('a-valid-token');
+      const onUnauthorized = vi.fn();
+      setUnauthorizedHandler(onUnauthorized);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response(null, { status: 403 })),
+      );
+
+      await apiClient.get('/workspaces').catch(() => undefined);
+
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    });
   });
 });

@@ -6,7 +6,7 @@ import json
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, PostgresDsn, field_validator, model_validator
+from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "test", "staging", "production"]
@@ -14,6 +14,9 @@ Environment = Literal["development", "test", "staging", "production"]
 #: Used only when JWT_SECRET_KEY is unset outside production. Named so that it
 #: is unmistakable in a token dump or a config listing.
 DEV_JWT_SECRET_KEY = "insecure-development-only-jwt-secret-do-not-use-in-production"
+
+#: Database passwords that are fine locally and must never reach production.
+INSECURE_DB_PASSWORDS = frozenset({"aibi", "postgres", "password", "change-me-locally", ""})
 
 
 class Settings(BaseSettings):
@@ -84,6 +87,38 @@ class Settings(BaseSettings):
     CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:5173"]
     )
+    #: Public URL of the frontend, used in docs and deployment checks.
+    FRONTEND_URL: str | None = None
+
+    # --- HTTP hardening ------------------------------------------------------
+    #: Emit security response headers. On by default in every environment.
+    SECURITY_HEADERS_ENABLED: bool = True
+    #: Send Strict-Transport-Security. Only meaningful behind HTTPS, so it is
+    #: off unless explicitly enabled - sending it over plain HTTP can lock a
+    #: browser out of a host that is not yet TLS-terminated.
+    HSTS_ENABLED: bool = False
+    HSTS_MAX_AGE_SECONDS: int = 63_072_000
+    #: Content-Security-Policy for API responses. The API serves JSON and the
+    #: OpenAPI pages only, so it can be strict; the frontend is served
+    #: separately and carries its own policy.
+    CONTENT_SECURITY_POLICY: str = (
+        "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+    )
+    #: Ceiling on any request body, independent of the upload limit. Guards the
+    #: JSON endpoints, which would otherwise accept an unbounded payload.
+    MAX_REQUEST_BODY_MB: int = 64
+
+    # --- Rate limiting -------------------------------------------------------
+    #: Master switch. Disabled in tests so the suite is not throttled.
+    RATE_LIMIT_ENABLED: bool = True
+    #: Requests per window for ordinary authenticated endpoints.
+    RATE_LIMIT_DEFAULT_PER_MINUTE: int = 120
+    #: Login, registration and anything else that guesses credentials.
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 10
+    #: AI-backed endpoints, which cost money per call.
+    RATE_LIMIT_AI_PER_MINUTE: int = 20
+    #: Expensive but local work: uploads, reports, insight runs, refreshes.
+    RATE_LIMIT_HEAVY_PER_MINUTE: int = 30
 
     # --- AI providers --------------------------------------------------------
     # Never commit real keys; these are read from the environment only.
@@ -150,12 +185,58 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.ENVIRONMENT == "production"
 
-    @model_validator(mode="after")
-    def _require_jwt_secret_in_production(self) -> Settings:
-        """Fail fast rather than sign production tokens with a known key."""
-        if self.is_production and not self.JWT_SECRET_KEY:
-            raise ValueError("JWT_SECRET_KEY must be set when ENVIRONMENT=production.")
-        return self
+    @property
+    def max_request_body_bytes(self) -> int:
+        return self.MAX_REQUEST_BODY_MB * 1024 * 1024
+
+    def production_problems(self) -> list[str]:
+        """Every reason this configuration is unsafe for production.
+
+        Returns the list rather than raising, and is deliberately *not* a
+        pydantic validator: a validator's exception is wrapped in a
+        ``ValidationError`` that embeds a truncated repr of the input, which
+        put the tail of ``JWT_SECRET_KEY`` into the startup error and therefore
+        into the logs. ``get_settings`` raises on the returned list instead, so
+        the message names variables and never carries a value.
+        """
+        if not self.is_production:
+            return []
+
+        problems: list[str] = []
+
+        if not self.JWT_SECRET_KEY:
+            problems.append(
+                "JWT_SECRET_KEY must be set (generate with "
+                "`python -c \"import secrets; print(secrets.token_urlsafe(64))\"`)."
+            )
+        elif len(self.JWT_SECRET_KEY) < 32:
+            problems.append("JWT_SECRET_KEY must be at least 32 characters.")
+
+        if self.DEBUG:
+            problems.append("DEBUG must be false in production.")
+
+        # A wildcard origin plus credentialed requests is the classic mistake.
+        if "*" in self.CORS_ORIGINS:
+            problems.append("CORS_ORIGINS must not contain '*' in production.")
+        if not self.CORS_ORIGINS:
+            problems.append("CORS_ORIGINS must list the frontend origin(s).")
+        insecure_origins = [
+            origin
+            for origin in self.CORS_ORIGINS
+            if origin.startswith("http://") and "localhost" not in origin
+        ]
+        if insecure_origins:
+            problems.append(
+                "CORS_ORIGINS must use https:// in production: "
+                + ", ".join(insecure_origins)
+            )
+
+        # Only checked when the discrete values are in use; a DATABASE_URL is
+        # supplied whole and its credentials are the operator's business.
+        if not self.DATABASE_URL and self.POSTGRES_PASSWORD in INSECURE_DB_PASSWORDS:
+            problems.append("POSTGRES_PASSWORD must not be a default value in production.")
+
+        return problems
 
     @property
     def jwt_secret_key(self) -> str:
@@ -163,10 +244,24 @@ class Settings(BaseSettings):
         return self.JWT_SECRET_KEY or DEV_JWT_SECRET_KEY
 
 
+class ConfigurationError(RuntimeError):
+    """Raised at startup when production configuration is unsafe."""
+
+
 @lru_cache
 def get_settings() -> Settings:
-    """Cached settings accessor so the environment is parsed exactly once."""
-    return Settings()
+    """Cached settings accessor so the environment is parsed exactly once.
+
+    Production configuration is checked here, so an unsafe deployment fails on
+    import with a message that lists the variables to fix and contains no
+    secret values.
+    """
+    resolved = Settings()
+    problems = resolved.production_problems()
+    if problems:
+        bullets = "\n  - ".join(problems)
+        raise ConfigurationError(f"Invalid production configuration:\n  - {bullets}")
+    return resolved
 
 
 settings = get_settings()

@@ -382,6 +382,154 @@ h3 {
   overflow-y: auto;
 }
 
+/* --- Visualization -------------------------------------------------------- */
+
+.cell--null {
+  color: var(--muted);
+  font-style: italic;
+  opacity: 0.8;
+}
+
+.heatmap th {
+  white-space: nowrap;
+}
+
+.heatmap__head {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  max-height: 8rem;
+}
+
+.heatmap__cell {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5rem;
+  border-radius: 3px;
+}
+
+/* Recharts injects its own focus outline; keep it consistent with the app. */
+.recharts-wrapper:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- KPI analytics -------------------------------------------------------- */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.kpi-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.8rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.kpi-card--unavailable {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+.kpi-card__header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.kpi-card__name {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kpi-card__remove {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+
+.kpi-card__remove:hover {
+  color: var(--error);
+}
+
+.kpi-card__value {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-card__change {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.kpi-card__change--up {
+  color: var(--ok);
+}
+
+.kpi-card__change--down {
+  color: var(--error);
+}
+
+.kpi-card__change--flat {
+  color: var(--muted);
+}
+
+.badge--abc-a {
+  background: rgba(55, 201, 139, 0.16);
+  color: var(--ok);
+}
+
+.badge--abc-b {
+  background: rgba(224, 179, 65, 0.16);
+  color: var(--degraded);
+}
+
+.badge--abc-c {
+  background: rgba(154, 164, 182, 0.16);
+  color: var(--muted);
+}
+
+/* --- AI analyst ----------------------------------------------------------- */
+
+.insight {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.insight:last-child {
+  border-bottom: 0;
+}
+
+.insight__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.insight__recommendation {
+  margin: 0.35rem 0 0;
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--accent);
+  color: var(--text);
+}
+
 .modal__backdrop {
   position: fixed;
   inset: 0;
@@ -516,5 +664,70 @@ h3 {
 @media (prefers-reduced-motion: reduce) {
   .spinner__dot {
     animation: none;
+  }
+}
+
+/* --- Dashboard builder ----------------------------------------------------- */
+
+.dashboard-grid {
+  display: grid;
+  gap: 1rem;
+  /* Rows are a fixed base height; a widget spans as many as it needs. */
+  grid-auto-rows: minmax(140px, auto);
+}
+
+.dashboard-grid__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.dashboard-grid__cell > .panel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.dashboard-grid__cell--dragging {
+  opacity: 0.5;
+}
+
+.dashboard-grid__resize {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.dashboard-widget {
+  margin: 0;
+}
+
+.dashboard-text {
+  white-space: pre-wrap;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.dashboard-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* A saved layout must stay readable on a phone, so the grid collapses. */
+@media (max-width: 900px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-grid__cell {
+    grid-column: span 1 !important;
   }
 }

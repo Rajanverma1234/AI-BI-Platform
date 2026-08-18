@@ -21,6 +21,10 @@ dependencies = [
     "python-multipart>=0.0.18,<1.0.0",
     "pandas>=2.2.0,<3.0.0",
     "openpyxl>=3.1.5,<4.0.0",
+    # Report rendering: PDF via ReportLab, PowerPoint via python-pptx.
+    # XLSX and CSV reuse openpyxl and the standard library.
+    "reportlab>=4.2.0,<5.0.0",
+    "python-pptx>=1.0.2,<2.0.0",
     "sqlalchemy[asyncio]>=2.0.36,<3.0.0",
     "alembic>=1.14.0,<2.0.0",
     "asyncpg>=0.30.0,<1.0.0",
@@ -62,8 +66,15 @@ ignore_missing_imports = true
 # pandas/openpyxl ship no stubs; the optional stub packages are heavy and lag
 # behind releases, so these imports are untyped at the boundary only.
 [[tool.mypy.overrides]]
-module = ["pandas.*", "openpyxl.*"]
+module = ["pandas.*", "openpyxl.*", "reportlab.*", "pptx.*"]
 ignore_missing_imports = true
+
+# python-pptx ships py.typed but leaves several of its own constructors
+# (RGBColor, Pt, add_table) unannotated, so calls into it cannot be typed from
+# this side. Scoped to the one module that touches the library.
+[[tool.mypy.overrides]]
+module = ["app.services.report_pptx"]
+disallow_untyped_calls = false
 
 # Fixtures and parametrised cases do not benefit from strict annotations.
 [[tool.mypy.overrides]]

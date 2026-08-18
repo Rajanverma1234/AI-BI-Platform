@@ -21,11 +21,30 @@ export default defineConfig({
     host: true,
     port: 4173,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Charting is only needed on the Explore screen; splitting it keeps the
+        // main bundle small and lets it be cached separately.
+        manualChunks: {
+          charts: ['recharts'],
+          react: ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Vitest defaults to 5s per test, which is not enough for a screen that
+    // renders React 19 + recharts in jsdom and waits on two chained fetches.
+    // On a busy machine (or CI alongside a Docker stack) that produced
+    // failures that moved around between runs. These raise the ceiling only;
+    // a passing test still finishes in well under a second.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

@@ -42,9 +42,36 @@ async def test_readiness_reports_dependencies(client: AsyncClient) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    names = {dep["name"] for dep in body["dependencies"]}
-    assert names == {"database", "ai_provider"}
-    assert body["status"] == "ok"
+    dependencies = {dep["name"]: dep for dep in body["dependencies"]}
+    assert set(dependencies) == {"database", "ai_provider"}
+    assert dependencies["database"]["status"] == "ok"
+
+
+async def test_readiness_is_degraded_but_serving_without_an_ai_provider(
+    client: AsyncClient,
+) -> None:
+    """AI is optional, so its absence degrades readiness without failing it.
+
+    The suite runs on the null provider, which reports itself as unconfigured.
+    That must surface honestly as `degraded` - but still HTTP 200, because an
+    orchestrator gates traffic on the status code and the platform serves
+    every non-AI feature perfectly well without a provider.
+    """
+    response = await client.get(f"{HEALTH_URL}/ready")
+
+    assert response.status_code == 200
+    body = response.json()
+    ai = next(dep for dep in body["dependencies"] if dep["name"] == "ai_provider")
+    assert ai["status"] == "degraded"
+    assert "not configured" in (ai["detail"] or "")
+    assert body["status"] == "degraded"
+
+
+async def test_readiness_never_leaks_connection_details(client: AsyncClient) -> None:
+    body = (await client.get(f"{HEALTH_URL}/ready")).text
+
+    for secret in ["password", "postgresql://", "api_key", "sk-"]:
+        assert secret not in body.lower()
 
 
 async def test_root_returns_service_metadata(client: AsyncClient) -> None:

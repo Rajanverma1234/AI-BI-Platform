@@ -15,6 +15,7 @@ from fastapi import APIRouter, File, Form, UploadFile, status
 from app.api.deps import CurrentUser, DbSession, Storage
 from app.api.pagination import PageParams
 from app.core.exceptions import ValidationError
+from app.core.rate_limit import HeavyRateLimit
 from app.schemas.common import ErrorResponse
 from app.schemas.dataset import DatasetListResponse, DatasetResponse
 from app.services import dataset_service
@@ -78,6 +79,7 @@ async def list_datasets(
     response_model=DatasetResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Upload a dataset",
+    dependencies=[HeavyRateLimit],
     responses=_UPLOAD_RESPONSES,
 )
 async def upload_dataset(
@@ -128,6 +130,7 @@ async def get_dataset(
     "/{dataset_id}",
     response_model=DatasetResponse,
     summary="Replace a dataset's file (re-upload)",
+    dependencies=[HeavyRateLimit],
     responses=_UPLOAD_RESPONSES,
 )
 async def replace_dataset(

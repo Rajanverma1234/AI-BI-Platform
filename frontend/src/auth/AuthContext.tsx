@@ -8,6 +8,7 @@
 import { createContext, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { fetchCurrentUser, login as loginRequest, register as registerRequest } from '@/api/auth';
+import { setUnauthorizedHandler } from '@/lib/apiClient';
 import { clearAuthToken, getAuthToken, setAuthToken } from '@/lib/authToken';
 import type { LoginPayload, RegisterPayload, User } from '@/types/api';
 
@@ -36,6 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setStatus('unauthenticated');
   }, []);
+
+  // End the session as soon as any request is rejected with a token attached,
+  // rather than leaving the user on a page whose every request now fails.
+  useEffect(() => {
+    setUnauthorizedHandler(logout);
+    return () => setUnauthorizedHandler(null);
+  }, [logout]);
 
   // Restore the session on first load: a stored token is only trusted once
   // the backend confirms it via /auth/me.

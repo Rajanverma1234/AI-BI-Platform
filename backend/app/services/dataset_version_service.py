@@ -18,7 +18,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError, StorageError, ValidationError
+from app.core.exceptions import StorageError, ValidationError
 from app.core.logging import get_logger
 from app.core.pagination import Pagination
 from app.models.dataset import Dataset
@@ -34,6 +34,7 @@ from app.schemas.cleaning import (
 from app.schemas.profiling import DataQualitySummary, DatasetProfile
 from app.services import (
     data_quality,
+    dataset_access,
     dataset_cleaning,
     dataset_frames,
     dataset_profiling,
@@ -49,37 +50,18 @@ PREVIEW_SAMPLE_ROWS = 20
 _VERSION_NOT_FOUND = "Dataset version not found."
 
 
-async def _get_version(
-    session: AsyncSession,
-    dataset: Dataset,
-    version_id: uuid.UUID,
-) -> DatasetVersion:
-    """Load a version, scoped to an already-authorised dataset."""
-    result = await session.execute(
-        select(DatasetVersion).where(
-            DatasetVersion.id == version_id,
-            # Scoping by dataset prevents reaching another tenant's version.
-            DatasetVersion.dataset_id == dataset.id,
-        )
-    )
-    version = result.scalar_one_or_none()
-    if version is None:
-        raise NotFoundError(_VERSION_NOT_FOUND)
-    return version
-
-
 async def _load_source(
     session: AsyncSession,
     storage: StorageProvider,
     dataset: Dataset,
     source_version_id: uuid.UUID | None,
 ) -> tuple[pd.DataFrame, DatasetVersion | None]:
-    """Read either the original upload or a prior cleaned version."""
-    if source_version_id is None:
-        return dataset_frames.read_dataset_frame(storage, dataset), None
+    """Read either the original upload or a prior cleaned version.
 
-    version = await _get_version(session, dataset, source_version_id)
-    return dataset_frames.read_version_frame(storage, version), version
+    Delegates to ``dataset_access`` so cleaning and visualisation share one
+    loading path.
+    """
+    return await dataset_access.read_source(session, storage, dataset, source_version_id)
 
 
 # --- Profiling and quality ---------------------------------------------------

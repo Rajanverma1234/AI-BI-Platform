@@ -11,6 +11,27 @@ import type { ApiErrorBody } from '@/types/api';
 
 export const DEFAULT_TIMEOUT_MS = 10_000;
 
+/**
+ * Notified when the backend rejects a request that carried a token.
+ *
+ * A token can expire at any point in a session, not just on the /auth/me call
+ * made at startup. Without this, the next request would fail with an opaque
+ * error and leave the user on a page that can no longer load anything.
+ * `AuthProvider` registers a handler that ends the session cleanly.
+ */
+type UnauthorizedHandler = () => void;
+
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  onUnauthorized = handler;
+}
+
+/** Fires only when a token was actually sent - a plain 401 on login is normal. */
+function reportUnauthorized(status: number, hadToken: boolean): void {
+  if (status === 401 && hadToken) onUnauthorized?.();
+}
+
 /** Normalised failure - the UI never has to inspect raw fetch errors. */
 export class ApiError extends Error {
   readonly status: number;
@@ -112,6 +133,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const payload = await parseBody(response);
 
   if (!response.ok) {
+    reportUnauthorized(response.status, Boolean(token));
     if (isApiErrorBody(payload)) {
       throw new ApiError(payload.error.message, {
         status: response.status,
@@ -186,6 +208,7 @@ export function uploadFile<T>(
         return;
       }
 
+      reportUnauthorized(xhr.status, Boolean(token));
       if (isApiErrorBody(payload)) {
         reject(
           new ApiError(payload.error.message, {
@@ -217,6 +240,83 @@ export function uploadFile<T>(
 
     xhr.send(body);
   });
+}
+
+export interface DownloadedFile {
+  blob: Blob;
+  filename: string;
+}
+
+/**
+ * Fetch a binary response as a blob.
+ *
+ * A plain `<a download>` cannot carry the bearer token, so file downloads go
+ * through `fetch` and the caller turns the blob into an object URL. The
+ * filename comes from Content-Disposition, falling back to the caller's name.
+ */
+export async function download(
+  path: string,
+  fallbackFilename: string,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<DownloadedFile> {
+  const { timeoutMs = 120_000, signal } = options;
+  const token = getAuthToken();
+
+  const timeoutController = new AbortController();
+  const timer = setTimeout(() => timeoutController.abort(), timeoutMs);
+  const onAbort = () => timeoutController.abort();
+  signal?.addEventListener('abort', onAbort);
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(path), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: timeoutController.signal,
+    });
+  } catch (cause) {
+    const aborted = signal?.aborted === true;
+    throw new ApiError(aborted ? 'Download cancelled.' : 'Could not reach the API.', {
+      code: aborted ? 'cancelled' : 'network_error',
+      details: cause,
+    });
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
+
+  if (!response.ok) {
+    reportUnauthorized(response.status, Boolean(token));
+    // A failure still returns the standard JSON error envelope.
+    const payload = await parseBody(response);
+    if (isApiErrorBody(payload)) {
+      throw new ApiError(payload.error.message, {
+        status: response.status,
+        code: payload.error.code,
+        details: payload.error.details,
+      });
+    }
+    throw new ApiError(`Download failed with status ${response.status}.`, {
+      status: response.status,
+      code: 'http_error',
+    });
+  }
+
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const match = /filename="?([^";]+)"?/i.exec(disposition);
+
+  return { blob: await response.blob(), filename: match?.[1] ?? fallbackFilename };
+}
+
+/** Prompt the browser to save a downloaded blob, then release the object URL. */
+export function saveBlob({ blob, filename }: DownloadedFile): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Append defined query parameters to a path, skipping undefined values. */

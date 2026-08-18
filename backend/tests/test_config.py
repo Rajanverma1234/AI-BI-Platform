@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError as PydanticValidationError
 
-from app.core.config import DEV_JWT_SECRET_KEY, Settings, get_settings
+from app.core.config import (
+    DEV_JWT_SECRET_KEY,
+    ConfigurationError,
+    Settings,
+    get_settings,
+)
 
 # conftest exports these so the suite runs without PostgreSQL; clear them here
 # so the tests observe the real defaults rather than the test harness values.
@@ -84,15 +88,123 @@ def test_log_level_is_normalised() -> None:
     assert Settings(_env_file=None, LOG_LEVEL="debug").LOG_LEVEL == "DEBUG"
 
 
-def test_production_hides_docs_flag() -> None:
-    settings = Settings(_env_file=None, ENVIRONMENT="production", JWT_SECRET_KEY="a-real-secret")
+#: The minimum a production deployment must supply. Each test below removes or
+#: corrupts exactly one of these to show which rule catches it.
+NEWLINE = chr(10)
+
+VALID_PRODUCTION = {
+    "ENVIRONMENT": "production",
+    "JWT_SECRET_KEY": "x" * 64,
+    "POSTGRES_PASSWORD": "a-real-generated-password",
+    "CORS_ORIGINS": "https://app.example.com",
+    "DEBUG": False,
+}
+
+
+def production(**overrides: object) -> Settings:
+    return Settings(_env_file=None, **{**VALID_PRODUCTION, **overrides})  # type: ignore[arg-type]
+
+
+def problems(**overrides: object) -> str:
+    """The rendered startup error for a given production configuration."""
+    return NEWLINE.join(production(**overrides).production_problems())
+
+
+def test_a_fully_configured_production_environment_starts() -> None:
+    settings = production()
 
     assert settings.is_production is True
+    assert settings.CORS_ORIGINS == ["https://app.example.com"]
+    assert settings.production_problems() == []
 
 
 def test_production_requires_an_explicit_jwt_secret() -> None:
-    with pytest.raises(PydanticValidationError, match="JWT_SECRET_KEY"):
-        Settings(_env_file=None, ENVIRONMENT="production")
+    assert "JWT_SECRET_KEY" in problems(JWT_SECRET_KEY=None)
+
+
+def test_production_rejects_a_short_jwt_secret() -> None:
+    assert "at least 32 characters" in problems(JWT_SECRET_KEY="too-short")
+
+
+def test_production_rejects_debug_mode() -> None:
+    assert "DEBUG must be false" in problems(DEBUG=True)
+
+
+def test_production_rejects_a_wildcard_cors_origin() -> None:
+    """A wildcard plus credentialed requests is the classic CORS mistake."""
+    assert "must not contain" in problems(CORS_ORIGINS="*")
+
+
+def test_production_rejects_plaintext_http_origins() -> None:
+    assert "https://" in problems(CORS_ORIGINS="http://app.example.com")
+
+
+def test_production_rejects_a_default_database_password() -> None:
+    assert "POSTGRES_PASSWORD" in problems(POSTGRES_PASSWORD="postgres")
+
+
+def test_the_startup_error_never_contains_a_secret_value() -> None:
+    """Regression: the tail of JWT_SECRET_KEY used to reach the logs.
+
+    The checks were a pydantic ``model_validator``, and pydantic wraps a
+    validator's exception in a ``ValidationError`` carrying a truncated repr of
+    the input - which included part of the signing key. They now run outside
+    the model so the message names variables and never carries a value.
+    """
+    secret = "SUPERSECRETVALUE-abcdefghijklmnopqrstuvwxyz0123456789"
+    password = "PRIVATEDBPASSWORD-0123456789"
+
+    message = problems(DEBUG=True, JWT_SECRET_KEY=secret, POSTGRES_PASSWORD=password)
+
+    assert message, "this configuration should be rejected"
+    assert secret not in message
+    assert password not in message
+    # Not even a fragment of either.
+    assert "wxyz0123" not in message
+    assert "PRIVATEDB" not in message
+
+
+def test_get_settings_refuses_to_return_an_unsafe_production_configuration(
+    monkeypatch,
+) -> None:
+    """Fail-fast is what stops an insecure deployment from serving traffic."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("DEBUG", "true")
+    get_settings.cache_clear()
+
+    with pytest.raises(ConfigurationError, match="Invalid production configuration"):
+        get_settings()
+
+    get_settings.cache_clear()
+
+
+def test_a_supplied_database_url_bypasses_the_password_check() -> None:
+    """The operator owns the credentials inside a full DATABASE_URL."""
+    settings = production(
+        POSTGRES_PASSWORD="postgres",
+        DATABASE_URL="postgresql+asyncpg://user:generated@db.internal:5432/aibi",
+    )
+
+    assert settings.database_url.endswith("/aibi")
+
+
+def test_every_production_problem_is_reported_at_once() -> None:
+    """One restart should surface the whole list, not the first failure."""
+    message = NEWLINE.join(
+        Settings(_env_file=None, ENVIRONMENT="production", DEBUG=True).production_problems()
+    )
+
+    assert "JWT_SECRET_KEY" in message
+    assert "DEBUG must be false" in message
+    assert "POSTGRES_PASSWORD" in message
+
+
+def test_development_keeps_working_without_production_configuration() -> None:
+    settings = Settings(_env_file=None, ENVIRONMENT="development")
+
+    assert settings.is_production is False
+    assert settings.CORS_ORIGINS == ["http://localhost:5173"]
+    assert settings.production_problems() == []
 
 
 def test_non_production_falls_back_to_a_marked_dev_secret() -> None:

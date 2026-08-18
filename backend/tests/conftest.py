@@ -18,6 +18,9 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("PASSWORD_HASH_TIME_COST", "1")
 os.environ.setdefault("PASSWORD_HASH_MEMORY_COST", "8192")
 os.environ.setdefault("PASSWORD_HASH_PARALLELISM", "1")
+# The suite fires far more requests per minute than a human ever would; the
+# limiter itself is covered by its own tests.
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 import pytest  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402

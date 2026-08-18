@@ -78,6 +78,12 @@ export default function ProjectDetailPage() {
           actions={
             !editing && (
               <div className="row">
+                <Link
+                  className="button button--ghost"
+                  to={`/workspaces/${workspaceId}/projects/${projectId}/dashboards`}
+                >
+                  Dashboards
+                </Link>
                 <Link className="button button--ghost" to={`/projects/${projectId}/datasets`}>
                   Datasets
                 </Link>
