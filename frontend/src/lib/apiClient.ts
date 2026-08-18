@@ -5,11 +5,19 @@
  * timeouts, JSON handling and error normalisation live in one place.
  */
 
-import { apiUrl } from '@/config/env';
+import { apiUrl, env } from '@/config/env';
 import { getAuthToken } from '@/lib/authToken';
 import type { ApiErrorBody } from '@/types/api';
 
-export const DEFAULT_TIMEOUT_MS = 10_000;
+/**
+ * Request ceiling for ordinary JSON calls.
+ *
+ * Sourced from configuration rather than hard-coded: the old fixed 10s was
+ * shorter than the cold start of a scale-to-zero host, so the first request
+ * after an idle period aborted and surfaced as a network error even though the
+ * backend was healthy. See VITE_API_TIMEOUT_MS in `@/config/env`.
+ */
+export const DEFAULT_TIMEOUT_MS = env.apiTimeoutMs;
 
 /**
  * Notified when the backend rejects a request that carried a token.

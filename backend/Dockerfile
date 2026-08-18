@@ -47,6 +47,8 @@ RUN pip install --upgrade pip && pip install .
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 # The storage root is created up front and owned by the runtime user, so a
 # bind-mounted volume does not land root-owned and unwritable.
@@ -69,6 +71,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # to be exact - see docs/security.md#rate-limiting.
 ENV UVICORN_WORKERS=4
 
-# Shell form, so $UVICORN_WORKERS is expanded at start-up.
-CMD uvicorn app.main:app --host 0.0.0.0 --port 8000 \
-    --workers "$UVICORN_WORKERS" --proxy-headers --forwarded-allow-ips "*"
+# The entrypoint applies pending migrations before starting uvicorn, so an
+# image deployed straight to a managed platform brings its own schema rather
+# than relying on a compose command that platform never runs. It reads
+# UVICORN_WORKERS and PORT at start-up and execs uvicorn as PID 1.
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

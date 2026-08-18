@@ -106,7 +106,13 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    environment: *backend_env
+    environment:
+      <<: *backend_env
+      # The one-shot `migrate` service above owns the schema here, so the
+      # entrypoint must not repeat the upgrade on every restart and on every
+      # replica. Platforms with no separate release step (Render, Fly, Cloud
+      # Run) leave this unset and let the entrypoint migrate instead.
+      RUN_MIGRATIONS: "false"
     volumes:
       # Uploaded datasets and generated reports must outlive the container.
       # Back this volume up alongside the database - see docs/backup-recovery.md.

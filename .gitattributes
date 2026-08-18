@@ -1,0 +1,7 @@
+# Shell scripts must keep LF endings even when checked out on Windows: a CRLF
+# entrypoint fails inside a Linux container with an unhelpful
+# "exec /app/docker-entrypoint.sh: no such file or directory".
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
