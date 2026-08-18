@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -87,6 +88,14 @@ class Settings(BaseSettings):
     CORS_ORIGINS: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:5173"]
     )
+    #: Pattern for origins that cannot be listed up front. Preview deployments
+    #: are the reason this exists: Vercel gives every push a fresh hostname
+    #: (https://<project>-<hash>-<team>.vercel.app), so no fixed list can cover
+    #: them and the preflight fails with a 400 that carries no
+    #: Access-Control-Allow-Origin. Starlette full-matches the pattern against
+    #: the Origin header, so it is anchored implicitly. Keep it narrow - it is
+    #: checked in addition to CORS_ORIGINS, never instead of it.
+    CORS_ORIGIN_REGEX: str | None = None
     #: Public URL of the frontend, used in docs and deployment checks.
     FRONTEND_URL: str | None = None
 
@@ -154,6 +163,24 @@ class Settings(BaseSettings):
         else:
             return value
         return [str(item).strip().lower().lstrip(".") for item in items if str(item).strip()]
+
+    @field_validator("CORS_ORIGIN_REGEX")
+    @classmethod
+    def _compile_cors_origin_regex(cls, value: str | None) -> str | None:
+        """Reject a pattern that Starlette would later fail to compile.
+
+        A bad pattern here would otherwise surface as a 500 on the first
+        cross-origin request rather than at start-up. The pattern is not a
+        secret, so echoing it in the error is safe.
+        """
+        if value is None or not value.strip():
+            return None
+        pattern = value.strip()
+        try:
+            re.compile(pattern)
+        except re.error as exc:
+            raise ValueError(f"CORS_ORIGIN_REGEX is not a valid regex ({exc}): {pattern}") from exc
+        return pattern
 
     @field_validator("LOG_LEVEL")
     @classmethod
@@ -230,6 +257,23 @@ class Settings(BaseSettings):
                 "CORS_ORIGINS must use https:// in production: "
                 + ", ".join(insecure_origins)
             )
+
+        # A regex is the one place a wildcard can slip past the "*" check above.
+        # These probes are origins no deployment of this app will ever serve
+        # from, so a match means the pattern would hand credentialed access to
+        # any site that asks.
+        if self.CORS_ORIGIN_REGEX:
+            compiled = re.compile(self.CORS_ORIGIN_REGEX)
+            matched = [
+                probe
+                for probe in ("https://attacker.example", "http://attacker.example")
+                if compiled.fullmatch(probe)
+            ]
+            if matched:
+                problems.append(
+                    "CORS_ORIGIN_REGEX also matches unrelated origins "
+                    f"({', '.join(matched)}); narrow it to your own frontend hosts."
+                )
 
         # Only checked when the discrete values are in use; a DATABASE_URL is
         # supplied whole and its credentials are the operator's business.

@@ -65,6 +65,10 @@ def create_app() -> FastAPI:
         # Explicit origins only. Never "*": these endpoints are credentialed,
         # and production configuration refuses a wildcard outright.
         allow_origins=settings.CORS_ORIGINS,
+        # Additive, for hosts whose name is not known until deploy time -
+        # preview deployments above all. Unset by default; when set it is
+        # checked for over-breadth at start-up.
+        allow_origin_regex=settings.CORS_ORIGIN_REGEX,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
