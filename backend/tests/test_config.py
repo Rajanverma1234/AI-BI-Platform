@@ -230,3 +230,48 @@ def test_no_credentials_are_hard_coded() -> None:
 
     assert settings.ANTHROPIC_API_KEY is None
     assert settings.OPENAI_API_KEY is None
+
+
+def test_cors_origin_regex_is_optional_and_defaults_to_none() -> None:
+    assert Settings(_env_file=None).CORS_ORIGIN_REGEX is None
+
+
+def test_blank_cors_origin_regex_is_normalised_to_none() -> None:
+    """An empty platform variable must not become the pattern "" - it matches nothing."""
+    assert Settings(_env_file=None, CORS_ORIGIN_REGEX="   ").CORS_ORIGIN_REGEX is None
+
+
+def test_invalid_cors_origin_regex_is_rejected_at_parse_time() -> None:
+    with pytest.raises(ValueError, match="CORS_ORIGIN_REGEX is not a valid regex"):
+        Settings(_env_file=None, CORS_ORIGIN_REGEX=r"^https://(unclosed\.vercel\.app$")
+
+
+def test_a_narrow_preview_regex_is_accepted_in_production() -> None:
+    settings = Settings(
+        _env_file=None,
+        ENVIRONMENT="production",
+        DEBUG=False,
+        JWT_SECRET_KEY="x" * 40,
+        POSTGRES_PASSWORD="a-real-production-password",
+        CORS_ORIGINS=["https://ai-bi-platform-sepia.vercel.app"],
+        CORS_ORIGIN_REGEX=r"^https://ai-bi-platform-[a-z0-9]+-someteam\.vercel\.app$",
+    )
+
+    assert settings.production_problems() == []
+
+
+def test_an_overly_broad_cors_origin_regex_is_a_production_problem() -> None:
+    """A regex is the one way a wildcard can get past the "*" check."""
+    settings = Settings(
+        _env_file=None,
+        ENVIRONMENT="production",
+        DEBUG=False,
+        JWT_SECRET_KEY="x" * 40,
+        POSTGRES_PASSWORD="a-real-production-password",
+        CORS_ORIGINS=["https://ai-bi-platform-sepia.vercel.app"],
+        CORS_ORIGIN_REGEX=r"^https?://.*$",
+    )
+
+    problems = settings.production_problems()
+
+    assert any("CORS_ORIGIN_REGEX also matches unrelated origins" in p for p in problems)

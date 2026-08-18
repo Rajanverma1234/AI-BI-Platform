@@ -133,7 +133,8 @@
       "Bash(rm -rf dist)",
       "Bash(export VITE_API_BASE_URL=https://ai-bi-platform-0nd9.onrender.com VITE_API_VERSION_PREFIX=/api/v1 VITE_APP_NAME=\"AI BI Platform\")",
       "Bash(echo \"typecheck exit=$?\")",
-      "Bash(POSTGRES_USER=x POSTGRES_PASSWORD=y POSTGRES_DB=z JWT_SECRET_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CORS_ORIGINS=https://e.com VITE_API_BASE_URL=https://a.com docker compose -f docker-compose.prod.yml config)"
+      "Bash(POSTGRES_USER=x POSTGRES_PASSWORD=y POSTGRES_DB=z JWT_SECRET_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa CORS_ORIGINS=https://e.com VITE_API_BASE_URL=https://a.com docker compose -f docker-compose.prod.yml config)",
+      "Bash(curl -s -m 90 https://ai-bi-platform-0nd9.onrender.com/api/v1/health/ready)"
     ],
     "additionalDirectories": [
       "\\tmp",
