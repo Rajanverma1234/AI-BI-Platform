@@ -220,6 +220,34 @@ docker compose down          # stop;  add -v to also drop the database volume
 > docker compose up -d --build backend
 > ```
 
+> **This compose file is for development only.** It bind-mounts source, runs
+> uvicorn with `--reload` and publishes the database port. For production use
+> `docker-compose.prod.yml` — see [Production deployment](#production-deployment).
+
+## Production deployment
+
+```bash
+cp .env.production.example .env.production   # fill in every REQUIRED value
+docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
+The production stack differs from development in every way that matters:
+release image targets (no reload, no dev dependencies, no dev server), no
+source bind-mounts, no published database port, migrations as a one-shot step
+that must succeed before the API starts, and both services bound to
+`127.0.0.1` behind a TLS-terminating reverse proxy.
+
+Production **refuses to start** without `JWT_SECRET_KEY` (≥ 32 chars), a
+non-default `POSTGRES_PASSWORD`, and explicit HTTPS `CORS_ORIGINS`. It lists
+every problem at once rather than failing on the first.
+
+| Document | Covers |
+| --- | --- |
+| [docs/deployment.md](docs/deployment.md) | Environment variables, migrations, HTTPS, domains, troubleshooting, monitoring |
+| [docs/security.md](docs/security.md) | Authentication, authorization, secrets, uploads, AI/NLQ, CORS, headers, rate limits, logging |
+| [docs/security-checklist.md](docs/security-checklist.md) | Pre-launch sign-off, with verification commands |
+| [docs/backup-recovery.md](docs/backup-recovery.md) | Database and storage backup, restore, migration recovery |
+
 ## Running tests
 
 **Backend** — no external services required; the suite runs on in-memory SQLite.
@@ -268,6 +296,18 @@ project slug.
 | --- | --- |
 | `0001_initial` | `users`, `workspaces`, `projects` |
 | `0002_auth_user_fields` | Renames `hashed_password` → `password_hash` (now `NOT NULL`) and `full_name` → `display_name` |
+| `0003_datasets` | `datasets` |
+| `0004_dataset_versions` | `dataset_versions` |
+| `0005_nlq_queries` | `nlq_queries` |
+| `0006_reports` | `reports` |
+| `0007_insight_runs` | `insight_runs` |
+| `0008_dashboards` | `dashboards`, `dashboard_widgets` |
+
+In production, migrations run as a **separate one-shot service** that must
+complete before the API starts, so a failed migration stops the deployment
+rather than leaving a half-migrated database serving traffic. The application
+never creates or drops tables at startup. Back up before migrating — see
+[docs/backup-recovery.md](docs/backup-recovery.md#migration-recovery).
 
 ## Working on this codebase
 
